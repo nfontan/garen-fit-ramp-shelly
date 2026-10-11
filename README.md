@@ -24,6 +24,7 @@ Sin componentes extra: el Shelly se alimenta de la propia placa y se conecta con
 - [Scripts](#scripts)
 - [Alertas push (ntfy)](#alertas-push-ntfy)
 - [CarPlay](#carplay)
+- [Siri](#siri-oye-siri-abrir-portón)
 - [WiFi y recuperación](#wifi-y-recuperación)
 - [Lecciones aprendidas](#lecciones-aprendidas)
 - [Advertencia](#advertencia)
@@ -168,15 +169,20 @@ Estados verificados con el portón funcionando:
 - Con el multímetro (sin el Shelly) a mitad de camino se miden 4,7 V; con el Shelly conectado esas
   líneas se leen como "sin tensión". No afecta el funcionamiento.
 
-### Indicador de estado en la app
+### Indicador de estado y botón inteligente
 
 La app de Shelly muestra las salidas pero no las entradas en modo `detached`. Por eso se usa
-**OUT2** (no conectada a nada) como indicador: el script [`watchdog-state.js`](scripts/watchdog-state.js)
-la mantiene **encendida cuando el portón no está cerrado** y apagada cuando está cerrado.
-Si alguien la toca, el script la vuelve a su estado en medio segundo.
+**OUT2** (no conectada a nada) con el script [`watchdog-state.js`](scripts/watchdog-state.js):
 
-En la app aparecen dos tarjetas: renombrarlas a **"Portón"** (OUT1, el botón) y
-**"Portón abierto"** (OUT2, el indicador).
+- **Indicador:** OUT2 queda **encendida cuando el portón no está cerrado** y apagada cuando está
+  cerrado. Su nombre en el Shelly cambia a `Estado: cerrado / abierto / a mitad` (visible en la
+  configuración del canal; el dashboard de la app usa su propio nombre).
+- **Botón inteligente:** encender OUT2 **abre** el portón (solo si está cerrado); apagarla lo
+  **cierra** (solo si está abierto). A mitad de camino no hace nada, porque no se sabe hacia
+  dónde iría el pulso. Después de cada orden vuelve a mostrar el estado real.
+
+En la app aparecen dos tarjetas: renombrarlas a **"Portón"** (OUT1, pulso simple) y
+**"Portón abierto"** (OUT2, indicador y botón inteligente).
 
 ![App Shelly](images/app-dashboard.png)
 
@@ -190,7 +196,7 @@ El Plus Uni permite **como máximo 3 scripts activos**. Los tres se cargan desde
 | Script | Qué hace |
 |---|---|
 | [`ap-rescue.js`](scripts/ap-rescue.js) | Si pasa 5 min sin poder conectarse a ninguna red WiFi, enciende el AP del Shelly **con contraseña**. Lo apaga al reconectar. |
-| [`watchdog-state.js`](scripts/watchdog-state.js) | **Watchdog**: si OUT1 queda encendida más de 2 s (falla del auto-off), la apaga. **Indicador**: maneja OUT2 según el estado del portón. |
+| [`watchdog-state.js`](scripts/watchdog-state.js) | **Watchdog**: si OUT1 queda encendida más de 2-3 s (falla del auto-off), la apaga. **Indicador y botón inteligente** en OUT2. |
 | [`open-alert.js`](scripts/open-alert.js) | Alerta push por ntfy si el portón **no está cerrado** más de 5 min; repite cada 15 min y avisa al cerrarse. |
 
 Antes de cargarlos, cambiar `AP_PASS` en `ap-rescue.js` y `TOPIC` en `open-alert.js`.
@@ -222,6 +228,32 @@ remoto necesitaría un hub (HomePod o Apple TV).
 
 ---
 
+## Siri ("Oye Siri, abrir portón")
+
+> En prueba: la orden llega al Shelly; falta confirmar el recorrido completo con el atajo.
+
+Con la app **Atajos** del iPhone, un atajo por orden, usando la
+[Cloud Control API](https://shelly-api-docs.shelly.cloud/cloud-control-api/) de Shelly. Como la
+lógica está en el Shelly (botón inteligente en OUT2), cada atajo tiene solo dos acciones:
+
+1. **Obtener contenido de URL**
+   - URL: `https://<servidor>.shelly.cloud/device/relay/control`
+   - Método: **POST** · Cuerpo: **Formulario**
+   - Campos: `id` = ID del dispositivo, `auth_key` = clave de la nube, `channel` = `1`,
+     `turn` = `on` (abrir) / `off` (cerrar)
+2. **Leer texto con voz**: "Orden enviada".
+
+El servidor y la clave están en la app Shelly (Configuración → Hogar → Acceso y permisos →
+Clave de la nube). El ID es la MAC del Shelly en minúsculas.
+
+- Tiene que ser **POST con los datos en el cuerpo**: con GET (datos en el link) la API responde
+  `wrong_channel`.
+- Ejecutar cada atajo una vez en el celular y elegir **Permitir siempre**; si no, en el auto iOS
+  no puede mostrar la pregunta de permiso.
+- La clave de la nube da control de **todos** tus dispositivos: no compartirla.
+
+---
+
 ## WiFi y recuperación
 
 Tres capas para no tener que desmontar nunca el Shelly:
@@ -245,6 +277,10 @@ Tres capas para no tener que desmontar nunca el Shelly:
 - **Borrar el dispositivo de la app no lo resetea**: conserva WiFi, configuración y scripts; basta
   con volver a agregarlo.
 - La app usa **sus propios nombres** para cada canal, no el nombre que pone el Shelly.
+- **Un watchdog no debe cortar pulsos válidos**: la primera versión apagaba OUT1 cada vez que la
+  encontraba encendida en un chequeo periódico, y a veces cortaba el pulso de 1 s antes de tiempo
+  (la placa lo ignoraba). Ahora solo actúa si la salida sigue encendida en 3 chequeos seguidos.
+- **Cloud API**: las órdenes (`/device/relay/control`) requieren POST con cuerpo de formulario.
 
 ---
 

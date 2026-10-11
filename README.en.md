@@ -24,6 +24,7 @@ No extra components: the Shelly is powered by the board itself and connected wit
 - [Scripts](#scripts)
 - [Push alerts (ntfy)](#push-alerts-ntfy)
 - [CarPlay](#carplay)
+- [Siri](#siri-hey-siri-open-the-gate)
 - [WiFi and recovery](#wifi-and-recovery)
 - [Lessons learned](#lessons-learned)
 - [Warning](#warning)
@@ -169,14 +170,20 @@ States verified with the gate running:
 - With a multimeter (Shelly disconnected) halfway reads 4.7 V; with the Shelly connected those
   lines read as "no voltage". It does not affect operation.
 
-### State indicator in the app
+### State indicator and smart button
 
 The Shelly app shows the outputs but not `detached` inputs. So **OUT2** (wired to nothing) is used
-as an indicator: [`watchdog-state.js`](scripts/watchdog-state.js) keeps it **on while the gate is
-not closed** and off when closed. If someone taps it, the script restores it within half a second.
+together with [`watchdog-state.js`](scripts/watchdog-state.js):
 
-The app shows two cards: rename them to **"Gate"** (OUT1, the button) and **"Gate open"**
-(OUT2, the indicator).
+- **Indicator:** OUT2 stays **on while the gate is not closed** and off when closed. Its name on
+  the Shelly changes to `Estado: cerrado / abierto / a mitad` (visible in the channel settings; the
+  app dashboard uses its own name).
+- **Smart button:** turning OUT2 on **opens** the gate (only if closed); turning it off **closes**
+  it (only if open). Halfway it does nothing, since the direction of the next pulse is unknown.
+  After each command it goes back to showing the real state.
+
+The app shows two cards: rename them to **"Gate"** (OUT1, plain pulse) and **"Gate open"**
+(OUT2, indicator and smart button).
 
 ![Shelly app](images/app-dashboard.png)
 
@@ -190,7 +197,7 @@ The Plus Uni allows **at most 3 running scripts**. Load them from the Shelly web
 | Script | What it does |
 |---|---|
 | [`ap-rescue.js`](scripts/ap-rescue.js) | After 5 min unable to join any WiFi network, turns on the Shelly AP **with a password**. Turns it off once reconnected. |
-| [`watchdog-state.js`](scripts/watchdog-state.js) | **Watchdog**: if OUT1 stays on for more than 2 s (auto-off failure), turns it off. **Indicator**: drives OUT2 from the gate state. |
+| [`watchdog-state.js`](scripts/watchdog-state.js) | **Watchdog**: if OUT1 stays on for more than 2-3 s (auto-off failure), turns it off. **Indicator and smart button** on OUT2. |
 | [`open-alert.js`](scripts/open-alert.js) | ntfy push alert if the gate is **not closed** for more than 5 min; repeats every 15 min and notifies when it closes. |
 
 Before loading them, change `AP_PASS` in `ap-rescue.js` and `TOPIC` in `open-alert.js`.
@@ -222,6 +229,32 @@ access would require a hub (HomePod or Apple TV).
 
 ---
 
+## Siri ("Hey Siri, open the gate")
+
+> Being tested: the command reaches the Shelly; a full open/close run with the shortcut is still to be confirmed.
+
+Using the iPhone **Shortcuts** app, one shortcut per command, through Shelly's
+[Cloud Control API](https://shelly-api-docs.shelly.cloud/cloud-control-api/). Since the logic lives
+on the Shelly (smart button on OUT2), each shortcut has only two actions:
+
+1. **Get Contents of URL**
+   - URL: `https://<server>.shelly.cloud/device/relay/control`
+   - Method: **POST** · Request body: **Form**
+   - Fields: `id` = device ID, `auth_key` = cloud key, `channel` = `1`,
+     `turn` = `on` (open) / `off` (close)
+2. **Speak Text**: "Command sent".
+
+The server and key are in the Shelly app (Settings → Home → Access and permissions → Cloud key).
+The device ID is the Shelly MAC address in lowercase.
+
+- It must be **POST with the data in the body**: with GET (data in the URL) the API answers
+  `wrong_channel`.
+- Run each shortcut once on the phone and choose **Always Allow**; otherwise iOS cannot show the
+  permission prompt while driving.
+- The cloud key controls **all** your devices: do not share it.
+
+---
+
 ## WiFi and recovery
 
 Three layers so the Shelly never has to be taken out:
@@ -245,6 +278,10 @@ Three layers so the Shelly never has to be taken out:
 - **Removing the device from the app does not reset it**: WiFi, configuration and scripts are kept;
   just add it again.
 - The app uses **its own names** for each channel, not the name set on the Shelly.
+- **A watchdog must not cut valid pulses**: the first version turned OUT1 off whenever a periodic
+  check found it on, and sometimes cut the 1 s pulse short (the board ignored it). It now acts only
+  if the output is still on for 3 consecutive checks.
+- **Cloud API**: commands (`/device/relay/control`) require POST with a form body.
 
 ---
 
