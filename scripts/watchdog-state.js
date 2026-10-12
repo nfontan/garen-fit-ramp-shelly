@@ -7,6 +7,17 @@ let MAX_MS = 2000;
 let tw = null;
 let te = null;
 
+// Optional diagnostics: set DEBUG_TOPIC to an ntfy topic to receive every event.
+let DEBUG_TOPIC = '';
+let onSince = 0;
+
+function dbg(msg) {
+  print(msg);
+  if (DEBUG_TOPIC === '') return;
+  Shelly.call('HTTP.Request', { method: 'POST', url: 'https://ntfy.sh/' + DEBUG_TOPIC,
+    body: msg, timeout: 10 });
+}
+
 function state() {
   let c = Shelly.getComponentStatus('input:0').state;
   let a = Shelly.getComponentStatus('input:1').state;
@@ -38,20 +49,34 @@ function pulse() {
 }
 
 Shelly.addStatusHandler(function (e) {
-  if (e.component === 'input:0' || e.component === 'input:1') scheduleState(1500);
+  if (e.component === 'input:0' || e.component === 'input:1') {
+    dbg(e.component + ' = ' + JSON.stringify(e.delta.state) + ' -> ' + state());
+    scheduleState(1500);
+  }
   if (e.component === 'switch:1' && typeof e.delta.output !== 'undefined') {
     let s = state();
     let expected = s !== 'cerrado';
+    let msg = 'OUT2 = ' + JSON.stringify(e.delta.output) + ' (' + JSON.stringify(e.delta.source) +
+      '), estado ' + s;
     if (e.delta.output !== expected) {
-      if (e.delta.output === true && s === 'cerrado') { pulse(); scheduleState(3000); return; }
-      if (e.delta.output === false && s === 'abierto') { pulse(); scheduleState(3000); return; }
+      if (e.delta.output === true && s === 'cerrado') { dbg(msg + ': ABRIR, pulso'); pulse(); scheduleState(3000); return; }
+      if (e.delta.output === false && s === 'abierto') { dbg(msg + ': CERRAR, pulso'); pulse(); scheduleState(3000); return; }
+      dbg(msg + ': ignorado');
     }
     scheduleState(500);
   }
   if (e.component === 'switch:0' && typeof e.delta.output !== 'undefined') {
     if (e.delta.output === true) {
+      onSince = Shelly.getUptimeMs();
+      dbg('OUT1 ON (' + JSON.stringify(e.delta.source) + ')');
+    } else {
+      dbg('OUT1 OFF (' + JSON.stringify(e.delta.source) + ') tras ' +
+        JSON.stringify(Shelly.getUptimeMs() - onSince) + ' ms');
+    }
+    if (e.delta.output === true) {
       if (tw) Timer.clear(tw);
       tw = Timer.set(MAX_MS, false, function () {
+        dbg('Watchdog: OUT1 sigue encendida a los 2 s, apagando');
         Shelly.call('Switch.Set', { id: 0, on: false });
         tw = null;
       });
@@ -68,7 +93,7 @@ let onCount = 0;
 Timer.set(1000, true, function () {
   if (Shelly.getComponentStatus('switch:0').output) {
     onCount++;
-    if (onCount >= 3) { Shelly.call('Switch.Set', { id: 0, on: false }); onCount = 0; }
+    if (onCount >= 3) { dbg('Watchdog: OUT1 trabada, apagando'); Shelly.call('Switch.Set', { id: 0, on: false }); onCount = 0; }
   } else {
     onCount = 0;
   }

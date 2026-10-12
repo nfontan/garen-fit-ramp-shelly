@@ -230,8 +230,6 @@ remoto necesitaría un hub (HomePod o Apple TV).
 
 ## Siri ("Oye Siri, abrir portón")
 
-> En prueba: la orden llega al Shelly; falta confirmar el recorrido completo con el atajo.
-
 Con la app **Atajos** del iPhone, un atajo por orden, usando la
 [Cloud Control API](https://shelly-api-docs.shelly.cloud/cloud-control-api/) de Shelly. Como la
 lógica está en el Shelly (botón inteligente en OUT2), cada atajo tiene solo dos acciones:
@@ -246,8 +244,10 @@ lógica está en el Shelly (botón inteligente en OUT2), cada atajo tiene solo d
 El servidor y la clave están en la app Shelly (Configuración → Hogar → Acceso y permisos →
 Clave de la nube). El ID es la MAC del Shelly en minúsculas.
 
-- Tiene que ser **POST con los datos en el cuerpo**: con GET (datos en el link) la API responde
-  `wrong_channel`.
+- Tiene que ser **POST con los datos en el cuerpo** (Cuerpo de la solicitud → Formulario):
+  - con GET (datos en el link) la API responde `wrong_channel`;
+  - con los campos en **Cabeceras** responde `invalid_token` / `invalid_header`, aunque la clave
+    sea correcta (están una debajo de la otra en Atajos, es fácil confundirlas).
 - Ejecutar cada atajo una vez en el celular y elegir **Permitir siempre**; si no, en el auto iOS
   no puede mostrar la pregunta de permiso.
 - La clave de la nube da control de **todos** tus dispositivos: no compartirla.
@@ -277,10 +277,16 @@ Tres capas para no tener que desmontar nunca el Shelly:
 - **Borrar el dispositivo de la app no lo resetea**: conserva WiFi, configuración y scripts; basta
   con volver a agregarlo.
 - La app usa **sus propios nombres** para cada canal, no el nombre que pone el Shelly.
-- **Un watchdog no debe cortar pulsos válidos**: la primera versión apagaba OUT1 cada vez que la
-  encontraba encendida en un chequeo periódico, y a veces cortaba el pulso de 1 s antes de tiempo
-  (la placa lo ignoraba). Ahora solo actúa si la salida sigue encendida en 3 chequeos seguidos.
+- **Un watchdog no debe poder cortar pulsos válidos**: la primera versión apagaba OUT1 si la
+  encontraba encendida en un chequeo periódico, aunque fuera en medio de un pulso normal de 1 s.
+  Ahora solo actúa si sigue encendida en 3 chequeos seguidos.
 - **Cloud API**: las órdenes (`/device/relay/control`) requieren POST con cuerpo de formulario.
+- **Diagnóstico remoto**: `watchdog-state.js` tiene `DEBUG_TOPIC`; con un tema de ntfy, manda cada
+  evento (orden recibida y su origen, pulso, duración en ms, finales de carrera). Sirvió para
+  encontrar fallas sin acceso a la red local. Dejarlo vacío en uso normal.
+
+Pulsos medidos con el atajo: la salida se apaga por el temporizador (`timer`) a los ~1000 ms y el
+portón recorre en ~14 s.
 
 ---
 

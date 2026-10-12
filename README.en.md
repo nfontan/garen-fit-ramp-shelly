@@ -231,8 +231,6 @@ access would require a hub (HomePod or Apple TV).
 
 ## Siri ("Hey Siri, open the gate")
 
-> Being tested: the command reaches the Shelly; a full open/close run with the shortcut is still to be confirmed.
-
 Using the iPhone **Shortcuts** app, one shortcut per command, through Shelly's
 [Cloud Control API](https://shelly-api-docs.shelly.cloud/cloud-control-api/). Since the logic lives
 on the Shelly (smart button on OUT2), each shortcut has only two actions:
@@ -247,8 +245,10 @@ on the Shelly (smart button on OUT2), each shortcut has only two actions:
 The server and key are in the Shelly app (Settings → Home → Access and permissions → Cloud key).
 The device ID is the Shelly MAC address in lowercase.
 
-- It must be **POST with the data in the body**: with GET (data in the URL) the API answers
-  `wrong_channel`.
+- It must be **POST with the data in the body** (Request Body → Form):
+  - with GET (data in the URL) the API answers `wrong_channel`;
+  - with the fields under **Headers** it answers `invalid_token` / `invalid_header`, even with the
+    right key (both sections sit next to each other in Shortcuts, easy to mix up).
 - Run each shortcut once on the phone and choose **Always Allow**; otherwise iOS cannot show the
   permission prompt while driving.
 - The cloud key controls **all** your devices: do not share it.
@@ -278,10 +278,16 @@ Three layers so the Shelly never has to be taken out:
 - **Removing the device from the app does not reset it**: WiFi, configuration and scripts are kept;
   just add it again.
 - The app uses **its own names** for each channel, not the name set on the Shelly.
-- **A watchdog must not cut valid pulses**: the first version turned OUT1 off whenever a periodic
-  check found it on, and sometimes cut the 1 s pulse short (the board ignored it). It now acts only
-  if the output is still on for 3 consecutive checks.
+- **A watchdog must never be able to cut valid pulses**: the first version turned OUT1 off whenever a
+  periodic check found it on, even in the middle of a normal 1 s pulse. It now acts only if the
+  output is still on for 3 consecutive checks.
 - **Cloud API**: commands (`/device/relay/control`) require POST with a form body.
+- **Remote diagnostics**: `watchdog-state.js` has `DEBUG_TOPIC`; set it to an ntfy topic to receive
+  every event (command and its source, pulse, duration in ms, limit switches). It helped find
+  issues without local network access. Leave it empty in normal use.
+
+Pulses measured with the shortcut: the output is turned off by the timer (`timer`) at ~1000 ms and
+the gate travels in ~14 s.
 
 ---
 
