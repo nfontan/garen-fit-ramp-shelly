@@ -163,11 +163,14 @@ Estados verificados con el portón funcionando:
 | apagada | encendida | **Abierto** |
 | encendida | encendida | **Entre medio** (moviéndose o frenado a mitad) |
 
-- "Moviéndose" y "frenado a mitad" no se distinguen solo con las entradas. Como el recorrido dura
-  ~12 s, si el estado "entre medio" dura más de ~30 s, quedó frenado.
-- La **dirección** sí se puede deducir: si sale de cerrado está abriendo; si sale de abierto, cerrando.
-- Con el multímetro (sin el Shelly) a mitad de camino se miden 4,7 V; con el Shelly conectado esas
-  líneas se leen como "sin tensión". No afecta el funcionamiento.
+- "Moviéndose" y "frenado a mitad" no se distinguen solo con las entradas.
+- ⚠️ **"Abierto" no siempre se lee bien.** Las líneas inactivas están en ~4,7 V, justo en el umbral
+  de las entradas del Uni: a mitad de camino se leen como "sin tensión", y con el portón abierto del
+  todo la línea FCF **a veces** también. Entonces el portón abierto puede verse como "entre medio".
+  El cerrado sí se lee siempre bien (la línea FCA está más alta), igual que la salida de cerrado y la
+  llegada a cerrado.
+- Por eso el script deduce la **dirección** de esos eventos confiables: al salir de cerrado está
+  abriendo, y pasado el tiempo de recorrido (~14 s, margen de 18 s) ya terminó de moverse.
 
 ### Indicador de estado y botón inteligente
 
@@ -177,9 +180,16 @@ La app de Shelly muestra las salidas pero no las entradas en modo `detached`. Po
 - **Indicador:** OUT2 queda **encendida cuando el portón no está cerrado** y apagada cuando está
   cerrado. Su nombre en el Shelly cambia a `Estado: cerrado / abierto / a mitad` (visible en la
   configuración del canal; el dashboard de la app usa su propio nombre).
-- **Botón inteligente:** encender OUT2 **abre** el portón (solo si está cerrado); apagarla lo
-  **cierra** (solo si está abierto). A mitad de camino no hace nada, porque no se sabe hacia
-  dónde iría el pulso. Después de cada orden vuelve a mostrar el estado real.
+- **Botón inteligente:** encender OUT2 **abre** y apagarla **cierra**. Solo manda un pulso cuando el
+  resultado es predecible (la placa alterna abre → para → cierra → para):
+  - **Cerrar:** si está abierto, o "entre medio" pero quieto después de abrir.
+  - **Abrir:** si está cerrado, o "entre medio" pero quieto después de cerrar.
+  - **Orden en espera:** si llega mientras el portón se mueve (por ejemplo, "cerrar" mientras
+    todavía abre), se guarda hasta 60 s y se ejecuta apenas termina. Sirve para decir "cerrar"
+    apenas salís marcha atrás.
+  - Si lo pedido ya está pasando ("abrir" mientras abre), no hace nada.
+  - Después de cada orden vuelve a mostrar el estado real, y cada 10 s verifica que OUT2 coincida
+    con el portón.
 
 En la app aparecen dos tarjetas: renombrarlas a **"Portón"** (OUT1, pulso simple) y
 **"Portón abierto"** (OUT2, indicador y botón inteligente).
@@ -281,9 +291,12 @@ Tres capas para no tener que desmontar nunca el Shelly:
   encontraba encendida en un chequeo periódico, aunque fuera en medio de un pulso normal de 1 s.
   Ahora solo actúa si sigue encendida en 3 chequeos seguidos.
 - **Cloud API**: las órdenes (`/device/relay/control`) requieren POST con cuerpo de formulario.
-- **Diagnóstico remoto**: `watchdog-state.js` tiene `DEBUG_TOPIC`; con un tema de ntfy, manda cada
-  evento (orden recibida y su origen, pulso, duración en ms, finales de carrera). Sirvió para
-  encontrar fallas sin acceso a la red local. Dejarlo vacío en uso normal.
+- **Una orden que no cambia nada no le llega al script**: si OUT2 ya está apagada y llega "cerrar",
+  el Shelly no genera ningún evento. Por eso OUT2 se mantiene siempre sincronizada con el portón.
+- **No mandar logs por internet desde un script**: para diagnosticar se probó enviar cada evento a
+  ntfy, y en uso real las llamadas HTTP se acumularon con las del script hasta superar el límite de
+  llamadas simultáneas (`Too many calls in progress`). El script se detuvo y el indicador y los
+  atajos dejaron de funcionar. Ahora los registros solo van a la consola local del Shelly.
 
 Pulsos medidos con el atajo: la salida se apaga por el temporizador (`timer`) a los ~1000 ms y el
 portón recorre en ~14 s.

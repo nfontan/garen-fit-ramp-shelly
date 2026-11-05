@@ -164,11 +164,13 @@ States verified with the gate running:
 | off | on | **Open** |
 | on | on | **In between** (moving or stopped halfway) |
 
-- "Moving" and "stopped halfway" cannot be told apart from the inputs alone. Since travel takes
-  ~12 s, if "in between" lasts more than ~30 s the gate is stopped.
-- The **direction** can be inferred: leaving closed means opening; leaving open means closing.
-- With a multimeter (Shelly disconnected) halfway reads 4.7 V; with the Shelly connected those
-  lines read as "no voltage". It does not affect operation.
+- "Moving" and "stopped halfway" cannot be told apart from the inputs alone.
+- ⚠️ **"Open" is not always read correctly.** Idle lines sit at ~4.7 V, right at the Uni input
+  threshold: halfway they read as "no voltage", and with the gate fully open the FCF line
+  **sometimes** does too. So a fully open gate can look "in between". Closed is always read
+  correctly (the FCA line is higher), and so are leaving closed and arriving at closed.
+- That is why the script infers the **direction** from those reliable events: after leaving closed
+  it is opening, and once the travel time has passed (~14 s, 18 s margin) it has stopped moving.
 
 ### State indicator and smart button
 
@@ -178,9 +180,16 @@ together with [`watchdog-state.js`](scripts/watchdog-state.js):
 - **Indicator:** OUT2 stays **on while the gate is not closed** and off when closed. Its name on
   the Shelly changes to `Estado: cerrado / abierto / a mitad` (visible in the channel settings; the
   app dashboard uses its own name).
-- **Smart button:** turning OUT2 on **opens** the gate (only if closed); turning it off **closes**
-  it (only if open). Halfway it does nothing, since the direction of the next pulse is unknown.
-  After each command it goes back to showing the real state.
+- **Smart button:** turning OUT2 on **opens**, turning it off **closes**. It only pulses when the
+  result is predictable (the board cycles open → stop → close → stop):
+  - **Close:** if open, or "in between" but still after opening.
+  - **Open:** if closed, or "in between" but still after closing.
+  - **Pending command:** if it arrives while the gate is moving (e.g. "close" while still opening),
+    it is kept for up to 60 s and run as soon as the movement ends. Handy to say "close" right as
+    you back out.
+  - If the request is already happening ("open" while opening), it does nothing.
+  - After each command it goes back to showing the real state, and every 10 s it checks that OUT2
+    matches the gate.
 
 The app shows two cards: rename them to **"Gate"** (OUT1, plain pulse) and **"Gate open"**
 (OUT2, indicator and smart button).
@@ -282,9 +291,12 @@ Three layers so the Shelly never has to be taken out:
   periodic check found it on, even in the middle of a normal 1 s pulse. It now acts only if the
   output is still on for 3 consecutive checks.
 - **Cloud API**: commands (`/device/relay/control`) require POST with a form body.
-- **Remote diagnostics**: `watchdog-state.js` has `DEBUG_TOPIC`; set it to an ntfy topic to receive
-  every event (command and its source, pulse, duration in ms, limit switches). It helped find
-  issues without local network access. Leave it empty in normal use.
+- **A command that changes nothing never reaches the script**: if OUT2 is already off and "close"
+  arrives, the Shelly emits no event. That is why OUT2 is always kept in sync with the gate.
+- **Do not send logs over the network from a script**: sending every event to ntfy was tried for
+  diagnostics, and in real use those HTTP calls piled up with the script's own calls until they hit
+  the concurrent call limit (`Too many calls in progress`). The script stopped, and the indicator
+  and shortcuts stopped working. Logs now only go to the Shelly's local console.
 
 Pulses measured with the shortcut: the output is turned off by the timer (`timer`) at ~1000 ms and
 the gate travels in ~14 s.
